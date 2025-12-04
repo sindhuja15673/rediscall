@@ -8,7 +8,7 @@ const redis = new Redis(); // Connects to Redis at localhost:6379
 app.use(cors());
 app.use(express.json());
 
-const MAX_ACTIVE_CALLS = 10;
+const MAX_ACTIVE_CALLS = 100;
 
 // Start a call
 app.post("/call", async (req, res) => {
