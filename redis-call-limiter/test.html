@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Redis Call Limiter Test (Live Stats)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    button { margin: 5px; padding: 10px 20px; font-size: 16px; }
+    pre { background: #f4f4f4; padding: 10px; min-height: 50px; }
+  </style>
+</head>
+<body>
+  <h1>Redis Call Limiter Test</h1>
+
+  <button onclick="startCall()">Start Call</button>
+  <button onclick="resolveCall()">Resolve Call</button>
+
+  <h2>Output:</h2>
+  <pre id="output">No output yet</pre>
+
+  <h2>Live Stats:</h2>
+  <pre id="liveStats">Loading...</pre>
+
+  <script>
+    const apiBase = "http://localhost:3000";
+
+    async function startCall() {
+      try {
+        const res = await fetch(`${apiBase}/call`, { method: "POST" });
+        const data = await res.json();
+        document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        document.getElementById("output").textContent = err;
+      }
+    }
+
+    async function resolveCall() {
+      try {
+        const res = await fetch(`${apiBase}/resolve`, { method: "POST" });
+        const data = await res.json();
+        document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        document.getElementById("output").textContent = err;
+      }
+    }
+
+    async function updateLiveStats() {
+      try {
+        const res = await fetch(`${apiBase}/stats`);
+        const data = await res.json();
+        document.getElementById("liveStats").textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        document.getElementById("liveStats").textContent = err;
+      }
+    }
+
+    // Update live stats every 1 second
+    setInterval(updateLiveStats, 1000);
+
+    // Initial stats load
+    updateLiveStats();
+  </script>
+</body>
+</html>
