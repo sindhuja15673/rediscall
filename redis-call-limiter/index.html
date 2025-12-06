@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Call Queue Demo - Sessions A & B</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    .session { border: 1px solid #ddd; padding: 12px; margin: 10px 0; }
+    .stats { white-space: pre; background:#f4f4f4; padding:10px; }
+    .progress { height: 18px; background: #eee; border-radius: 9px; overflow: hidden; margin-top:8px; }
+    .progress > div { height: 100%; background: #4caf50; width: 0%; transition: width 0.5s; }
+  </style>
+</head>
+<body>
+  <h1>Call Queue Demo</h1>
+
+  <div class="session">
+    <h3>Session A</h3>
+    <input type="file" id="fileA" accept=".xlsx,.xls,.csv" />
+    <button onclick="uploadFile('A')">Upload A</button>
+    <div id="statusA"></div>
+  </div>
+
+  <div class="session">
+    <h3>Session B</h3>
+    <input type="file" id="fileB" accept=".xlsx,.xls,.csv" />
+    <button onclick="uploadFile('B')">Upload B</button>
+    <div id="statusB"></div>
+  </div>
+
+  <h3>Live Stats (Socket.IO + polling)</h3>
+  <div id="live" class="stats">Connecting...</div>
+
+  <h3>Controls</h3>
+  <button onclick="fetchExport()">Get Completed Results</button>
+  <pre id="exportOut"></pre>
+
+<script>
+const API_BASE = "http://localhost:3000";
+const socket = io(API_BASE);
+
+socket.on("connect", () => { console.log("socket connected"); socket.emit("request-stats"); });
+socket.on("stats", s => { document.getElementById("live").textContent = JSON.stringify(s, null, 2); });
+socket.on("job_started", j => { console.log("started", j); });
+socket.on("job_completed", j => { console.log("completed", j); });
+
+function parseFile(file, cb) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: "array" });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const json = XLSX.utils.sheet_to_json(worksheet, { defval: null });
+    cb(null, json);
+  };
+  reader.onerror = function(err) { cb(err); };
+  reader.readAsArrayBuffer(file);
+}
+
+async function uploadFile(sessionId) {
+  const input = document.getElementById(sessionId === 'A' ? 'fileA' : 'fileB');
+  if (!input.files || input.files.length === 0) { alert("Choose file"); return; }
+  const file = input.files[0];
+  parseFile(file, async (err, records) => {
+    if (err) { alert("parse error"); return; }
+    document.getElementById('status' + sessionId).textContent = 'Uploading ' + records.length + ' records...';
+    try {
+      const res = await fetch(API_BASE + "/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, records })
+      });
+      const json = await res.json();
+      document.getElementById('status' + sessionId).textContent = JSON.stringify(json);
+    } catch (e) {
+      document.getElementById('status' + sessionId).textContent = 'Upload error';
+    }
+  });
+}
+
+async function fetchExport() {
+  const res = await fetch(API_BASE + "/export-completed");
+  const data = await res.json();
+  document.getElementById("exportOut").textContent = JSON.stringify(data, null, 2);
+}
+
+// Poll every 3s in addition to socket updates (fallback)
+setInterval(async () => {
+  try {
+    const res = await fetch(API_BASE + "/stats");
+    const s = await res.json();
+    // update live if socket not active - but we update anyway (safe)
+    document.getElementById("live").textContent = JSON.stringify(s, null, 2);
+  } catch (err) { console.error(err); }
+}, 3000);
+</script>
+</body>
+</html>
