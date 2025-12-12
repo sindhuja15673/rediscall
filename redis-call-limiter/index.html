@@ -1,101 +1,293 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Call Queue Demo - Sessions A & B</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Call Queue Dashboard</title>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
   <style>
-    body { font-family: Arial; margin: 20px; }
-    .session { border: 1px solid #ddd; padding: 12px; margin: 10px 0; }
-    .stats { white-space: pre; background:#f4f4f4; padding:10px; }
-    .progress { height: 18px; background: #eee; border-radius: 9px; overflow: hidden; margin-top:8px; }
-    .progress > div { height: 100%; background: #4caf50; width: 0%; transition: width 0.5s; }
+    :root { font-family: Inter, Arial, sans-serif; color: #222; }
+    body { margin: 18px; background: #fafafa; }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 14px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+    }
+
+    .grid { display: grid; grid-template-columns: 1fr 360px; gap: 14px; }
+
+    /* KPI BOXES */
+    .panel { padding: 12px; border-radius: 8px; border: 1px solid #eee; background: #fff; }
+    .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .kpi { flex: 1; min-width: 160px; padding: 10px; border-radius: 8px; background: #f7fbf8; border: 1px solid #edf6ee; }
+    .kpi .label { font-size: 12px; color: #666; }
+    .kpi .value { font-size: 18px; font-weight: 600; margin-top: 6px; }
+
+    .rates { display: flex; gap: 8px; margin-top: 8px; }
+    .rate-pill { padding: 6px 10px; border-radius: 999px; background: #f1f7ff; border: 1px solid #e6f0ff; font-size: 13px; }
+
+    /* Uploads */
+    .uploads { display: flex; gap: 8px; margin-top: 32px; }
+    .upload-box { flex: 1; padding: 15px; border-radius: 8px; border: 1px dashed #ddd; }
+    .upload-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+    /* Buttons */
+    button { padding: 8px 12px; border-radius: 6px; border: 0; background: #2563eb; color: #fff; cursor: pointer; }
+    button.secondary { background: #6b7280; }
+    button.warn { background: #ef4444; }
+
+    /* Right panel */
+    .right { display: flex; flex-direction: column; gap: 10px; }
+    #exportOut {
+      height: 360px;
+      overflow: auto;
+      background: #f7f7fb;
+      padding: 8px;
+      border-radius: 6px;
+    }
+
+    @media(max-width:980px) { .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
+
 <body>
-  <h1>Call Queue Demo</h1>
+  <div class="container">
+    <h1>Call Queue Dashboard</h1>
 
-  <div class="session">
-    <h3>Session A</h3>
-    <input type="file" id="fileA" accept=".xlsx,.xls,.csv" />
-    <button onclick="uploadFile('A')">Upload A</button>
-    <div id="statusA"></div>
+    <div class="grid">
+      <!-- LEFT: KPI Summary + Upload -->
+      <div>
+        <div class="panel">
+
+          <!-- KPI ROW 1 -->
+          <div class="kpi-row">
+            <div class="kpi"><div class="label">Pending (Queue)</div><div id="kpi-pending" class="value">0</div></div>
+            <div class="kpi"><div class="label">Processing</div><div id="kpi-processing" class="value">0</div></div>
+            <div class="kpi"><div class="label">Completed</div><div id="kpi-completed" class="value">0</div></div>
+          </div>
+
+          <!-- KPI ROW 2 -->
+          <div class="kpi-row" style="margin-top:12px">
+            <div class="kpi"><div class="label">Active Calls</div><div id="kpi-active" class="value">0</div></div>
+            <div class="kpi"><div class="label">Total Made</div><div id="kpi-totalMade" class="value">0</div></div>
+            <div class="kpi"><div class="label">Total Resolved</div><div id="kpi-totalResolved" class="value">0</div></div>
+          </div>
+
+          <!-- RATE LIMITS -->
+          <div style="margin-top:12px">
+            <div class="label">Global Rate</div>
+
+            <div class="rates">
+              <div class="rate-pill">Limit: <span id="global-limit">-</span></div>
+              <div class="rate-pill">Used this min: <span id="global-used">-</span></div>
+              <div class="rate-pill">Per-session limit: <span id="session-limit">-</span></div>
+            </div>
+
+            <div class="rates" style="margin-top:8px">
+              <div class="rate-pill">Session A: <span id="sessionA">0</span></div>
+              <div class="rate-pill">Session B: <span id="sessionB">0</span></div>
+            </div>
+          </div>
+
+          <!-- UPLOADS -->
+          <div class="uploads">
+            <div class="upload-box">
+              <strong>Upload Session A</strong>
+              <input id="fileA" type="file" accept="*/*" style="margin-top:8px" />
+              <div class="upload-actions">
+                <button onclick="uploadFile('A')">Upload A</button>
+                <div id="statusA" style="align-self:center;color:#444"></div>
+              </div>
+            </div>
+
+            <div class="upload-box">
+              <strong>Upload Session B</strong>
+              <input id="fileB" type="file" accept=".xlsx,.xls,.csv" style="margin-top:8px" />
+              <div class="upload-actions">
+                <button onclick="uploadFile('B')">Upload B</button>
+                <div id="statusB" style="align-self:center;color:#444"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CONTROLS -->
+          <div style="margin-top:19px;display:flex;gap:8px">
+            <button class="secondary" onclick="resetAll()">Reset Calls</button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- RIGHT: EXPORT ONLY (NO LIVE JSON) -->
+      <div class="right">
+        <div class="panel">
+          <strong>Export / Debug</strong>
+          <div style="margin-top:8px">
+            <button onclick="downloadExport()">Download Completed (JSON)</button>
+            <button class="warn" onclick="clearCompletedPreview()">Clear Preview</button>
+          </div>
+          <pre id="exportOut"></pre>
+        </div>
+      </div>
+
+    </div>
   </div>
-
-  <div class="session">
-    <h3>Session B</h3>
-    <input type="file" id="fileB" accept=".xlsx,.xls,.csv" />
-    <button onclick="uploadFile('B')">Upload B</button>
-    <div id="statusB"></div>
-  </div>
-
-  <h3>Live Stats (Socket.IO + polling)</h3>
-  <div id="live" class="stats">Connecting...</div>
-
-  <h3>Controls</h3>
-  <button onclick="fetchExport()">Get Completed Results</button>
-  <pre id="exportOut"></pre>
 
 <script>
-const API_BASE = "http://localhost:3000";
-const socket = io(API_BASE);
+/* ------------------ CONFIG ------------------ */
+const API_BASE =
+  (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+    ? `${location.protocol}//${location.hostname}:3000`
+    : `${location.origin}`;
 
-socket.on("connect", () => { console.log("socket connected"); socket.emit("request-stats"); });
-socket.on("stats", s => { document.getElementById("live").textContent = JSON.stringify(s, null, 2); });
-socket.on("job_started", j => { console.log("started", j); });
-socket.on("job_completed", j => { console.log("completed", j); });
+/* ------------------ SOCKET ------------------ */
+const socket = io(API_BASE, { transports: ["websocket", "polling"] });
 
-function parseFile(file, cb) {
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const data = new Uint8Array(e.target.result);
-    const workbook = XLSX.read(data, { type: "array" });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const json = XLSX.utils.sheet_to_json(worksheet, { defval: null });
-    cb(null, json);
-  };
-  reader.onerror = function(err) { cb(err); };
-  reader.readAsArrayBuffer(file);
+socket.on("connect", () => { socket.emit("request-stats"); });
+socket.on("stats", s => renderStats(s));
+
+socket.on("job_completed", async () => { await fetchExport(); });
+
+/* ------------------ RENDER STATS ------------------ */
+function renderStats(s) {
+  document.getElementById("kpi-pending").textContent = s.pending;
+  document.getElementById("kpi-processing").textContent = s.processing;
+  document.getElementById("kpi-completed").textContent = s.completed;
+
+  document.getElementById("kpi-active").textContent = s.active;
+  document.getElementById("kpi-totalMade").textContent = s.totalMade;
+  document.getElementById("kpi-totalResolved").textContent = s.totalResolved;
+
+  document.getElementById("global-limit").textContent = s.globalRatePerMin;
+  document.getElementById("global-used").textContent = s.globalRateThisMin;
+  document.getElementById("session-limit").textContent = s.perSessionLimit;
+  document.getElementById("sessionA").textContent = s.sessionRates?.A ?? 0;
+  document.getElementById("sessionB").textContent = s.sessionRates?.B ?? 0;
 }
 
-async function uploadFile(sessionId) {
-  const input = document.getElementById(sessionId === 'A' ? 'fileA' : 'fileB');
-  if (!input.files || input.files.length === 0) { alert("Choose file"); return; }
-  const file = input.files[0];
-  parseFile(file, async (err, records) => {
-    if (err) { alert("parse error"); return; }
-    document.getElementById('status' + sessionId).textContent = 'Uploading ' + records.length + ' records...';
-    try {
-      const res = await fetch(API_BASE + "/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, records })
-      });
-      const json = await res.json();
-      document.getElementById('status' + sessionId).textContent = JSON.stringify(json);
-    } catch (e) {
-      document.getElementById('status' + sessionId).textContent = 'Upload error';
-    }
+/* ------------------ POLL FALLBACK ------------------ */
+setInterval(async () => {
+  try {
+    const s = await fetch(API_BASE + "/stats").then(r => r.json());
+    renderStats(s);
+  } catch (_) {}
+}, 3000);
+
+/* ------------------ PARSE FILE ------------------ */
+function parseFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: "array" });
+        const sheet = wb.SheetNames[0];
+        const json = XLSX.utils.sheet_to_json(wb.Sheets[sheet], { defval: null });
+        resolve(json);
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
   });
 }
 
-async function fetchExport() {
-  const res = await fetch(API_BASE + "/export-completed");
-  const data = await res.json();
-  document.getElementById("exportOut").textContent = JSON.stringify(data, null, 2);
+/* ------------------ UPLOAD ------------------ */
+
+async function uploadFile(sessionId){
+  const input = document.getElementById(sessionId === 'A' ? 'fileA' : 'fileB');
+  if (!input.files || input.files.length === 0){
+    alert('Choose a file');
+    return;
+  }
+
+  const file = input.files[0];
+  const statusEl = document.getElementById('status' + sessionId);
+
+  // --- FILE TYPE VALIDATION ---
+  const allowed = ['csv', 'xlsx', 'xls'];
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (!allowed.includes(ext)) {
+    alert('Invalid file type. Only CSV, XLS, XLSX allowed.');
+    statusEl.textContent = "Invalid file type.";
+    return; 
+  }
+
+  try {
+    const records = await parseFile(file);
+
+    // --- EMPTY FILE CHECK ---
+    if (records.length === 0) {
+      alert("CSV is empty. Please upload a file with at least 1 record.");
+      statusEl.textContent = "Empty file. Upload cancelled.";
+      return;
+    }
+
+    statusEl.textContent = `Uploading ${records.length} records...`;
+
+    const res = await fetch(API_BASE + '/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, records })
+    });
+
+    const j = await res.json();
+    statusEl.textContent = j.message ? `${j.message} (${j.count ?? ''})` : JSON.stringify(j);
+
+    socket.emit('request-stats');
+
+  } catch(err){
+    console.error(err);
+    statusEl.textContent = 'Upload failed';
+  }
 }
 
-// Poll every 3s in addition to socket updates (fallback)
-setInterval(async () => {
+/* ------------------ RESET ------------------ */
+async function resetAll() {
+  if (!confirm("Reset all queues & counters?")) return;
+
+  const res = await fetch(API_BASE + "/reset", { method: "POST" });
+  const j = await res.json();
+
+  alert(j.message);
+  socket.emit("request-stats");
+
+  document.getElementById("exportOut").textContent = "";
+}
+
+/* ------------------ EXPORT COMPLETED ------------------ */
+async function fetchExport() {
   try {
-    const res = await fetch(API_BASE + "/stats");
-    const s = await res.json();
-    // update live if socket not active - but we update anyway (safe)
-    document.getElementById("live").textContent = JSON.stringify(s, null, 2);
-  } catch (err) { console.error(err); }
-}, 3000);
+    const data = await fetch(API_BASE + "/export-completed").then(r => r.json());
+    document.getElementById("exportOut").textContent = JSON.stringify(data, null, 2);
+    return data;
+  } catch (_) {}
+}
+
+async function downloadExport() {
+  const data = await fetchExport();
+  if (!data) return;
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "completed_jobs.json";
+  a.click();
+
+  URL.revokeObjectURL(url);
+}
+
+function clearCompletedPreview() {
+  document.getElementById("exportOut").textContent = "";
+}
 </script>
 </body>
 </html>
+
